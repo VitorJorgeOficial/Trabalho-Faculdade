@@ -1,0 +1,337 @@
+import sqlite3
+import tkinter as tk
+from tkinter import messagebox, ttk
+from datetime import datetime
+
+conn = sqlite3.connect("sistema.db")
+cursor = conn.cursor()
+
+# Criação das tabelas
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    login TEXT UNIQUE,
+    senha TEXT,
+    tipo TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS pedidos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_pedido INTEGER,
+    usuario TEXT,
+    item TEXT,
+    categoria TEXT,
+    quantidade INTEGER,
+    comentario TEXT,
+    status TEXT,
+    data TEXT,
+    total REAL
+)
+""")
+
+cursor.execute("INSERT OR IGNORE INTO usuarios (login, senha, tipo) VALUES ('cliente1', '1234', 'usuario')")
+cursor.execute("INSERT OR IGNORE INTO usuarios (login, senha, tipo) VALUES ('admin', 'admin', 'admin')")
+conn.commit()
+
+# --------------------- PRODUTOS -------------------------
+produtos = {
+    "Pizzas": [
+        ("Margherita", "Molho de tomate, mussarela e manjericão", 34.99),
+        ("Calabresa", "Calabresa fatiada, cebola e orégano", 36.99),
+        ("Quatro Queijos", "Mussarela, parmesão, gorgonzola e catupiry", 38.99),
+        ("Frango com Catupiry", "Frango desfiado e catupiry", 37.50),
+        ("Portuguesa", "Presunto, ovo, cebola e azeitona", 39.99),
+        ("Pepperoni", "Molho, mussarela e pepperoni", 42.00),
+        ("Vegetariana", "Legumes, tomate e cebola", 35.90),
+        ("Bacon", "Bacon, mussarela e molho especial", 41.90),
+        ("Napolitana", "Molho, mussarela e tomate", 33.90),
+        ("Doce", "Chocolate, morango e leite condensado", 32.00),
+    ],
+    "Saladas": [
+        ("Caesar", "Alface, frango, parmesão e croutons", 22.00),
+        ("Tropical", "Alface, frutas e nozes", 19.50),
+        ("Grega", "Tomate, pepino, azeitonas e queijo feta", 20.00),
+        ("Atum", "Folhas, atum e molho especial", 21.75),
+        ("Caprese", "Tomate, mussarela de búfala e manjericão", 23.30),
+    ],
+    "Bebidas": [
+        ("Coca-Cola", "1,5L", 12.00),
+        ("Coca-Cola", "350ml", 4.99),
+        ("Pepsi", "1,5L", 8.99),
+        ("Pepsi Black", "350ml", 4.99),
+        ("Sprite", "350ml", 4.99),
+        ("Água Mineral", "500ml", 7.00),
+    ],
+    "Sobremesas": [
+        ("Brownie", "Brownie com calda de chocolate", 17.20),
+        ("Petit Gateau", "Bolo com recheio quente e sorvete", 22.00),
+        ("Torta de Limão", "Torta com recheio cremoso de limão", 15.50),
+        ("Mousse de Maracujá", "Mousse leve de maracujá", 14.00),
+        ("Pudim", "Pudim tradicional com calda", 12.99),
+    ]
+}
+
+# -------------------- TELA LOGIN -----------------------
+def mostrar_login():
+    login_win = tk.Tk()
+    login_win.title("Login")
+    login_win.geometry("300x250")
+    login_win.resizable(False, False)
+
+    tk.Label(login_win, text="Usuário:").pack(pady=5)
+    entry_login = tk.Entry(login_win)
+    entry_login.pack()
+
+    tk.Label(login_win, text="Senha:").pack(pady=5)
+    entry_senha = tk.Entry(login_win, show="*")
+    entry_senha.pack()
+
+    def autenticar():
+        login = entry_login.get()
+        senha = entry_senha.get()
+        cursor.execute("SELECT tipo FROM usuarios WHERE login=? AND senha=?", (login, senha))
+        resultado = cursor.fetchone()
+        if resultado:
+            login_win.destroy()
+            if resultado[0] == "admin":
+                tela_admin()
+            else:
+                tela_usuario(login)
+        else:
+            messagebox.showerror("Erro", "Login ou senha inválidos.")
+
+    def cadastrar():
+        def salvar():
+            novo_login = entry_novo_login.get()
+            nova_senha = entry_nova_senha.get()
+            tipo = tipo_var.get()
+            try:
+                cursor.execute("INSERT INTO usuarios (login, senha, tipo) VALUES (?, ?, ?)",
+                               (novo_login, nova_senha, tipo))
+                conn.commit()
+                messagebox.showinfo("Cadastro", "Usuário cadastrado com sucesso!")
+                cadastro_win.destroy()
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Erro", "Usuário já existe!")
+
+        cadastro_win = tk.Toplevel(login_win)
+        cadastro_win.title("Cadastrar")
+        tk.Label(cadastro_win, text="Novo login:").pack()
+        entry_novo_login = tk.Entry(cadastro_win)
+        entry_novo_login.pack()
+        tk.Label(cadastro_win, text="Nova senha:").pack()
+        entry_nova_senha = tk.Entry(cadastro_win, show="*")
+        entry_nova_senha.pack()
+        tk.Label(cadastro_win, text="Tipo:").pack()
+        tipo_var = tk.StringVar(value="usuario")
+        ttk.Combobox(cadastro_win, textvariable=tipo_var, values=["usuario", "admin"], state="readonly").pack()
+        tk.Button(cadastro_win, text="Salvar", command=salvar).pack(pady=10)
+
+    tk.Button(login_win, text="Entrar", command=autenticar).pack(pady=10)
+    tk.Button(login_win, text="Cadastrar", command=cadastrar).pack()
+
+    login_win.mainloop()
+
+# -------------------- TELA USUÁRIO -----------------------
+def tela_usuario(usuario_nome):
+    root = tk.Tk()
+    root.title("Pedido do Usuário")
+    root.geometry("900x700")
+
+    tk.Label(root, text=f"Bem-vindo, {usuario_nome}", font=("Arial", 14, "bold")).pack(pady=10)
+
+    frame = tk.Frame(root)
+    frame.pack(pady=10)
+
+    tk.Label(frame, text="Categoria:").grid(row=0, column=0, sticky="w")
+    categoria_var = tk.StringVar(value="Pizzas")
+    categorias_menu = ttk.Combobox(frame, textvariable=categoria_var, values=list(produtos.keys()), state="readonly")
+    categorias_menu.grid(row=0, column=1, padx=5)
+
+    lista_itens = tk.Listbox(frame, width=80, height=10)
+    lista_itens.grid(row=1, columnspan=2, pady=10)
+
+    def atualizar_lista(*args):
+        lista_itens.delete(0, tk.END)
+        for nome, desc, preco in produtos[categoria_var.get()]:
+            lista_itens.insert(tk.END, f"{nome} - {desc} (R$ {preco:.2f})")
+
+    categoria_var.trace_add("write", atualizar_lista)
+    atualizar_lista()
+
+    tk.Label(frame, text="Quantidade:").grid(row=2, column=0, sticky="w")
+    spin_quant = tk.Spinbox(frame, from_=1, to=10, width=5, state="readonly")
+    spin_quant.grid(row=2, column=1, sticky="w")
+
+    tk.Label(frame, text="Comentário/Alteração:").grid(row=3, column=0, sticky="w", pady=5)
+    entry_comentario = tk.Entry(frame, width=40)
+    entry_comentario.grid(row=3, column=1, pady=5)
+
+    carrinho = []
+    valor_total_var = tk.StringVar(value="Total: R$ 0.00")
+
+    carrinho_box = tk.Listbox(root, width=80, height=8)
+    carrinho_box.pack(pady=10)
+    tk.Label(root, textvariable=valor_total_var, font=("Arial", 12, "bold")).pack()
+
+    def adicionar_ao_carrinho():
+        if len(carrinho) >= 10:
+            messagebox.showwarning("Limite", "O carrinho não pode conter mais que 10 itens.")
+            return
+        item_texto = lista_itens.get(tk.ACTIVE)
+        if not item_texto:
+            messagebox.showwarning("Erro", "Selecione um item.")
+            return
+        item_nome = item_texto.split(" - ")[0]
+        categoria = categoria_var.get()
+        quantidade = int(spin_quant.get())
+        comentario = entry_comentario.get()
+        preco_item = next(p for n, d, p in produtos[categoria] if n == item_nome)
+        total = preco_item * quantidade
+        carrinho.append((item_nome, categoria, quantidade, comentario, preco_item, total))
+        carrinho_box.insert(tk.END, f"{item_nome} ({quantidade}x) - R$ {total:.2f}")
+        valor_total = sum(item[5] for item in carrinho)
+        valor_total_var.set(f"Total: R$ {valor_total:.2f}")
+        entry_comentario.delete(0, tk.END)
+
+    def excluir_do_carrinho():
+        selecionado = carrinho_box.curselection()
+        if not selecionado:
+            messagebox.showwarning("Erro", "Selecione um item para excluir.")
+            return
+        idx = selecionado[0]
+        carrinho_box.delete(idx)
+        carrinho.pop(idx)
+        valor_total = sum(item[5] for item in carrinho)
+        valor_total_var.set(f"Total: R$ {valor_total:.2f}")
+
+    def enviar_pedidos():
+        if not carrinho:
+            messagebox.showwarning("Erro", "Carrinho vazio.")
+            return
+        data = datetime.now().strftime("%Y-%m-%d")
+        cursor.execute("SELECT MAX(id_pedido) FROM pedidos")
+        ultimo = cursor.fetchone()[0] or 0
+        novo_id = ultimo + 1
+        for item_nome, categoria, quantidade, comentario, preco_unit, total in carrinho:
+            cursor.execute("""INSERT INTO pedidos 
+            (id_pedido, usuario, item, categoria, quantidade, comentario, status, data, total) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (novo_id, usuario_nome, item_nome, categoria, quantidade, comentario, "Recebido", data, total))
+        conn.commit()
+        messagebox.showinfo("Sucesso", "Pedidos enviados!")
+        carrinho.clear()
+        carrinho_box.delete(0, tk.END)
+        valor_total_var.set("Total: R$ 0.00")
+
+    tk.Button(root, text="Adicionar ao Carrinho", command=adicionar_ao_carrinho, bg="lightblue").pack(pady=5)
+    tk.Button(root, text="Excluir Item Selecionado", command=excluir_do_carrinho, bg="salmon").pack(pady=5)
+    tk.Button(root, text="Enviar Pedido", command=enviar_pedidos, bg="lightgreen").pack(pady=5)
+    tk.Button(root, text="Voltar para Login", command=lambda: (root.destroy(), mostrar_login()), bg="lightgray").pack(pady=5)
+
+    root.mainloop()
+
+# -------------------- TELA ADMIN -----------------------
+def tela_admin():
+    root = tk.Tk()
+    root.title("Painel do Administrador")
+    root.geometry("1000x600")
+    root.configure(bg="#2b2b2b")
+
+    style = ttk.Style()
+    style.theme_use("clam")
+    style.configure("Treeview", background="#3c3f41", foreground="white", fieldbackground="#3c3f41")
+    style.map("Treeview", background=[("selected", "#6a8759")])
+    style.configure("Treeview.Heading", background="#313335", foreground="white", font=("Arial", 10, "bold"))
+
+    tk.Label(root, text="Painel Administrativo", font=("Arial", 16, "bold"), bg="#2b2b2b", fg="white").pack(pady=10)
+
+    frame = tk.Frame(root, bg="#2b2b2b")
+    frame.pack(expand=True, fill="both", padx=10)
+
+    cols = ("ID", "ID Pedido", "Usuário", "Item", "Categoria", "Qtd", "Comentário", "Status", "Data", "Total")
+    tree = ttk.Treeview(frame, columns=cols, show="headings", height=20)
+    for col in cols:
+        tree.heading(col, text=col)
+        tree.column(col, width=90)
+    tree.pack(fill="both", expand=True)
+
+    def carregar():
+        tree.delete(*tree.get_children())
+        cursor.execute("SELECT * FROM pedidos")
+        for row in cursor.fetchall():
+            cor = {"Entregue": "green", "Recebido": "blue", "Recusado": "red", "Sendo feito": "orange"}.get(row[7], "white")
+            tree.insert("", tk.END, values=row, tags=(cor,))
+        tree.tag_configure("green", background="#4e9a06")
+        tree.tag_configure("blue", background="#3465a4")
+        tree.tag_configure("red", background="#cc0000")
+        tree.tag_configure("orange", background="#f57900")
+
+    def excluir():
+        item = tree.selection()
+        if not item:
+            messagebox.showwarning("Erro", "Selecione um pedido para excluir.")
+            return
+        confirm = messagebox.askyesno("Confirmação", "Deseja realmente excluir este pedido?")
+        if not confirm:
+            return
+        pedido_id = tree.item(item, "values")[0]
+        cursor.execute("DELETE FROM pedidos WHERE id=?", (pedido_id,))
+        conn.commit()
+        carregar()
+
+    def atualizar_status(novo_status):
+        item = tree.selection()
+        if not item:
+            messagebox.showwarning("Erro", "Selecione um pedido para alterar status.")
+            return
+        pedido_id = tree.item(item, "values")[0]
+        cursor.execute("UPDATE pedidos SET status=? WHERE id=?", (novo_status, pedido_id))
+        conn.commit()
+        carregar()
+
+    def relatorio_do_dia():
+        data_hoje = datetime.now().strftime("%Y-%m-%d")
+        cursor.execute("""SELECT item, SUM(quantidade), AVG(total/quantidade), SUM(total) 
+                          FROM pedidos WHERE data=? GROUP BY item""", (data_hoje,))
+        resultados = cursor.fetchall()
+
+        rel_win = tk.Toplevel(root)
+        rel_win.title("Relatório do Dia")
+        rel_win.geometry("500x400")
+
+        text = tk.Text(rel_win, font=("Arial", 12))
+        text.pack(expand=True, fill="both")
+
+        total_geral = 0
+        for item_nome, qtd, preco_unit, total in resultados:
+            text.insert(tk.END, f"{item_nome}: {qtd} unidades vendidas, "
+                                f"Preço unitário médio: R$ {preco_unit:.2f}, "
+                                f"Total: R$ {total:.2f}\n")
+            total_geral += total
+        text.insert(tk.END, f"\nTotal Geral: R$ {total_geral:.2f}")
+        text.configure(state="disabled")
+
+    carregar()
+
+    btn_frame = tk.Frame(root, bg="#2b2b2b")
+    btn_frame.pack(pady=10)
+
+    tk.Button(btn_frame, text="Excluir Pedido", command=excluir, bg="#cc0000", fg="white").grid(row=0, column=0, padx=5)
+    tk.Button(btn_frame, text="Status: Entregue", command=lambda: atualizar_status("Entregue"), bg="#4e9a06", fg="white").grid(row=0, column=1, padx=5)
+    tk.Button(btn_frame, text="Status: Recusado", command=lambda: atualizar_status("Recusado"), bg="#cc0000", fg="white").grid(row=0, column=2, padx=5)
+    tk.Button(btn_frame, text="Status: Recebido", command=lambda: atualizar_status("Recebido"), bg="#3465a4", fg="white").grid(row=0, column=3, padx=5)
+    tk.Button(btn_frame, text="Status: Sendo feito", command=lambda: atualizar_status("Sendo feito"), bg="#f57900", fg="white").grid(row=0, column=4, padx=5)
+    tk.Button(btn_frame, text="Gerar Relatório do Dia", command=relatorio_do_dia, bg="#555555", fg="white").grid(row=0, column=5, padx=5)
+    tk.Button(btn_frame, text="Voltar para Login", command=lambda: (root.destroy(), mostrar_login()), bg="#888888", fg="white").grid(row=0, column=6, padx=5)
+
+    root.mainloop()
+
+# ------------------ EXECUÇÃO --------------------
+if __name__ == "__main__":
+    try:
+        mostrar_login()
+    finally:
+        conn.close()
